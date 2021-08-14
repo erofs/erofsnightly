@@ -1,0 +1,24 @@
+#!/bin/bash
+
+mem="1G"
+
+[ "$3" -eq 1 ] && args='-zlz4hc,12'
+if [ "$3" -eq 2 ]; then
+	blks=$((RANDOM % 255 + 2))
+        echo "EROFS pclusterblks=$blks"
+	args="-zlz4hc,12 -C$((blks*4096)) --random-pclusterblks"
+	[ $blks -gt 171 ] && mem="1280M"
+fi
+curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
+bin/mkfs.erofs $args linux.erofs.img linux-5.4.140 && rm -rf linux-5.4.140
+truncate -s 16g overlay.ext4.img && mkfs.ext4 -q overlay.ext4.img
+sync
+qemu-system-x86_64 -nographic -serial mon:stdio -m $mem -smp 5 \
+	--accel tcg,thread=multi -kernel $1 \
+	-drive file=$2,index=0,readonly,media=cdrom \
+	-hdb linux.erofs.img -hdc overlay.ext4.img \
+	-net nic,model=e1000 -net user \
+	-append "net.ifnames=0 root=/dev/sr0 console=ttyS0"
+
+mkdir mnt && sudo mount -o loop overlay.ext4.img mnt && \
+	{ [ -f mnt/exitstatus ] && [ "x`cat mnt/exitstatus`" = "x0" ]; }

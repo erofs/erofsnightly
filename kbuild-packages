@@ -1,0 +1,9 @@
+perl
+bc
+ifupdown
+isc-dhcp-client
+resolvconf
+systemd
+systemd-sysv
+udev
+wget
