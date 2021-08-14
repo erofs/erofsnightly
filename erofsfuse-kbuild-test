@@ -1,0 +1,14 @@
+#!/bin/bash
+
+[ $1 -eq 1 ] && args='-zlz4hc,12'
+if [ $1 -eq 2 ]; then
+	blks=$((RANDOM % 255 + 2))
+        echo "EROFS pclusterblks=$blks"
+	args="-zlz4hc,12 -C$((blks*4096))"
+fi
+bin/mkfs.erofs $args lowerdir.erofs.img $2 && rm -rf $2
+mkdir {lower,upper,work}dir linux
+bin/erofsfuse lowerdir.erofs.img lowerdir
+fuse-overlayfs -olowerdir=lowerdir,upperdir=upperdir,workdir=workdir linux
+cd linux && make defconfig && make -j24 && make mrproper && cd ..
+fusermount -u linux && fusermount -u lowerdir

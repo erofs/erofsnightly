@@ -1,0 +1,172 @@
+name: basicsmoking
+
+on:
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  BUILDROOT_VERSION: '2021.02.1'
+  BUILDROOT_DIR: 'buildroot'
+
+jobs:
+  build-rootfs:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Download buildroot
+        run: |
+          wget -qc https://buildroot.org/downloads/buildroot-${{ env.BUILDROOT_VERSION }}.tar.gz
+          tar -zxf buildroot-${{ env.BUILDROOT_VERSION }}.tar.gz
+          mv buildroot-${{ env.BUILDROOT_VERSION }} ${{ env.BUILDROOT_DIR }}
+      - name: Cache rootfs images
+        id: cache-rootfs
+        uses: actions/cache@v2
+        with:
+          path: |
+            buildroot/output/images/rootfs.erofs
+          # Stupid hack to invalidate cache from UI
+          # https://github.com/actions/cache/issues/2#issuecomment-673493515
+          #key: ${{ env.BUILDROOT_DIR }}-${{ env.BUILDROOT_VERSION }}-${{ secrets.CACHE_VERSION }}
+          key: ${{ env.BUILDROOT_DIR }}-${{ env.BUILDROOT_VERSION }}-${{hashFiles('kbuild-overlay', 'buildroot_config')}}
+      - name: Blocked mirror workaround
+        run: echo "0.0.0.0 invisible-mirror.net" | sudo tee -a /etc/hosts
+      - name: Generate rootfs
+        if: steps.cache-rootfs.outputs.cache-hit != 'true'
+        run: |
+          cp -f buildroot_config ${{ env.BUILDROOT_DIR }}/.config
+          cd ${{ env.BUILDROOT_DIR }}
+          make olddefconfig && make -j24
+          ls -lR output
+
+  build-kernel:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Clone latest tree
+        run: |
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git -b dev-test
+          rm -rf erofs/.git       # delete .git to save space
+      - name: Build kernel image
+        run: |
+          sudo apt-get install -y libssl-dev libelf-dev flex bison dwarves
+          cd erofs
+          scripts/kconfig/merge_config.sh -m arch/x86/configs/x86_64_defconfig ../erofs-kernelconfig && \
+            make olddefconfig && make -j32
+      - name: Upload bzImage
+        uses: actions/upload-artifact@v2
+        with:
+          name: erofs-bzImage
+          path: |
+            erofs/arch/x86/boot/bzImage
+
+  build-erofs-utils:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build erofs-utils
+        run: |
+          sudo apt-get install -y libfuse-dev
+          curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.3.tar.gz | tar -zxv
+          make BUILD_SHARED=no -C lz4-1.9.3 && lz4libdir=$(pwd)/lz4-1.9.3/lib
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
+          cd erofs-utils
+          mkdir output
+          ./autogen.sh && ./configure --enable-fuse --prefix=$(pwd)/output \
+              --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
+              make && make install
+      - name: Upload erofs-utils
+        uses: actions/upload-artifact@v2
+        with:
+          name: erofs-utils
+          path: |
+            erofs-utils/output
+
+  qemu-kbuild-smoking:
+    runs-on: ubuntu-20.04
+    needs: [build-kernel, build-rootfs, build-erofs-utils]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Cache rootfs images
+        id: cache-rootfs
+        uses: actions/cache@v2
+        with:
+          path: |
+            buildroot/output/images/rootfs.erofs
+          key: ${{ env.BUILDROOT_DIR }}-${{ env.BUILDROOT_VERSION }}-${{hashFiles('kbuild-overlay', 'buildroot_config')}}
+      - name: Download erofs-utils prebuilts
+        uses: actions/download-artifact@v2
+        with:
+          name: erofs-utils
+      - name: Download bzImage
+        uses: actions/download-artifact@v2
+        with:
+          name: erofs-bzImage
+      - name: Test with QEMU
+        run: |
+          sudo apt install -y qemu-kvm
+          sudo adduser "${USER}" kvm
+          chmod +x bin/mkfs.erofs bin/erofsfuse
+          curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
+          bin/mkfs.erofs -zlz4hc linux.erofs.img linux-5.4.140 && rm -rf linux-5.4.140
+          truncate -s 32g overlay.ext4.img && mkfs.ext4 -q overlay.ext4.img
+          qemu-system-x86_64 -nographic -serial mon:stdio -m 256M -smp 4 \
+            -kernel bzImage \
+            -drive file=buildroot/output/images/rootfs.erofs,index=0,readonly,media=cdrom \
+            -hdb linux.erofs.img -hdc overlay.ext4.img \
+            -net nic,model=e1000 -net user \
+            -append "root=/dev/sr0 console=ttyS0"
+
+  erofsfuse-kbuild-smoking:
+    runs-on: ubuntu-20.04
+    needs: build-erofs-utils
+    strategy:
+      matrix:
+        pass: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Download erofs-utils prebuilts
+        uses: actions/download-artifact@v2
+        with:
+          name: erofs-utils
+      - name: Build 5.4 LTS kernel image with erofsfuse
+        run: |
+          sudo apt-get install -y fuse-overlayfs libssl-dev libelf-dev flex bison dwarves
+          chmod +x bin/mkfs.erofs bin/erofsfuse
+          curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
+          ./erofsfuse-kbuild-test ${{ matrix.pass }} linux-5.4.140
+
+  erofsfuse-enwik8-smoking:
+    runs-on: ubuntu-20.04
+    needs: build-erofs-utils
+    steps:
+      - uses: actions/checkout@v2
+      - name: Download erofs-utils prebuilts
+        uses: actions/download-artifact@v2
+        with:
+          name: erofs-utils
+      - name: enwik8 smoke testing with erofsfuse
+        run: |
+          mkdir enwik8 out
+          curl -L http://cs.fit.edu/~mmahoney/compression/enwik8.bz2 | bzcat > enwik8/enwik8
+          chmod +x bin/mkfs.erofs bin/erofsfuse
+          goldenmd5=$(md5sum enwik8/enwik8 | cut -d' ' -f1)
+          echo "EROFS no compression"
+          bin/mkfs.erofs -C4096 enwik8.erofs.img enwik8
+          bin/erofsfuse enwik8.erofs.img out
+          [ $(md5sum out/enwik8 | cut -d' ' -f1) != $goldenmd5 ] && false
+          fusermount -u out && rm -f enwik8.erofs.img
+          echo "EROFS no bigpcluster"
+          bin/mkfs.erofs -zlz4hc,12 -C4096 enwik8.lz4.erofs.img enwik8
+          bin/erofsfuse enwik8.lz4.erofs.img out
+          [ $(md5sum out/enwik8 | cut -d' ' -f1) != $goldenmd5 ] && false
+          fusermount -u out && rm -f enwik8.lz4.erofs.img
+          blks=$((RANDOM % 255 + 2))
+          echo "EROFS pclusterblks=$blks"
+          bin/mkfs.erofs -zlz4hc,12 -C$((blks*4096)) enwik8.lz4.erofs.img enwik8
+          bin/erofsfuse enwik8.lz4.erofs.img out
+          [ $(md5sum out/enwik8 | cut -d' ' -f1) != $goldenmd5 ] && false
+          fusermount -u out && rm -rf enwik8.lz4.erofs.img

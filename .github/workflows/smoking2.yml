@@ -1,0 +1,25 @@
+name: basicsmoking
+
+on:
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  BUILDROOT_VERSION: '2021.02.1'
+  BUILDROOT_DIR: 'buildroot'
+
+jobs:
+  build-rootfs:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: debootstrap
+        run: |
+          sudo apt-get install -y debootstrap
+          mkdir rootfs
+          sudo debootstrap --variant=minbase buster rootfs http://deb.debian.org/debian/
+

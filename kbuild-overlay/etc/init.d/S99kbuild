@@ -1,0 +1,40 @@
+#!/bin/sh
+
+case "$1" in
+	stop)
+		exit 1;;
+	start|restart|reload)
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|reload}"
+		exit 1
+esac
+
+printf "building kernel in QEMU..."
+
+for e in `ls /sys/class/net/ | grep ^e`; do
+	udhcpc -i$e
+done
+
+mkdir -p /tmp/bin
+export PATH="$PATH:/tmp/bin"
+wget https://raw.githubusercontent.com/intel/lkp-tests/master/sbin/make.cross \
+	--no-check-certificate -O /tmp/bin/make.cross
+chmod +x /tmp/bin/make.cross
+
+export COMPILER_INSTALL_PATH="/tmp/0day"
+
+# test kernel source
+mkdir -p /tmp/lowerdir /tmp/kbuild &&
+mount -t erofs -oro /dev/sda /tmp/lowerdir &&
+mount /dev/sdb /mnt &&
+mkdir -p /mnt/upperdir /mnt/workdir
+mount -t overlay -o lowerdir=/tmp/lowerdir,upperdir=/mnt/upperdir,workdir=/mnt/workdir \
+	overlay /tmp/kbuild &&
+cd /tmp/kbuild &&
+make.cross defconfig ARCH=x86_64 &&
+make.cross ARCH=x86_64 -j12 &&
+make mrproper &&
+
+umount /tmp/kbuild
+poweroff
