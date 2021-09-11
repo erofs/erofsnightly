@@ -119,6 +119,14 @@ jobs:
           sudo adduser "${USER}" kvm
           chmod +x bin/mkfs.erofs
           ./qemu-kbuild-test bzImage rootfs_4k.erofs.img ${{ matrix.pass }}
+      - name: Upload images if the test fails
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: qemu-kbuild-images
+          path: |
+            *.img
+            !overlay.ext4.img
 
   erofsfuse-kbuild-smoking:
     runs-on: ubuntu-20.04
@@ -138,6 +146,12 @@ jobs:
           chmod +x bin/mkfs.erofs bin/erofsfuse
           curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
           ./erofsfuse-kbuild-test ${{ matrix.pass }} linux-5.4.140
+      - name: Upload images if the test fails
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: erofsfuse-kbuild-images
+          path: '*.img'
 
   erofsfuse-enwik8-smoking:
     runs-on: ubuntu-20.04
