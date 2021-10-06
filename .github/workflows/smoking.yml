@@ -50,13 +50,14 @@ jobs:
       - uses: actions/checkout@v2
       - name: Build erofs-utils
         run: |
-          sudo apt-get install -y libfuse-dev
+          sudo apt-get install -y libfuse-dev libselinux1-dev
           curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.3.tar.gz | tar -zxv
           make BUILD_SHARED=no -C lz4-1.9.3 && lz4libdir=$(pwd)/lz4-1.9.3/lib
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output
-          ./autogen.sh && ./configure --enable-debug --enable-fuse --prefix=$(pwd)/output \
+          ./autogen.sh && ./configure --enable-debug --enable-fuse --with-selinux \
+              --prefix=$(pwd)/output \
               --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
               make && make install
       - name: Upload erofs-utils
