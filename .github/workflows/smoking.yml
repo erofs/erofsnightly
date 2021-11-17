@@ -95,7 +95,7 @@ jobs:
     needs: [build-kernel, build-rootfs, build-erofs-utils]
     strategy:
       matrix:
-        pass: [0, 1, 2]
+        pass: [0, 1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v2
       - name: Cache rootfs images
@@ -134,7 +134,7 @@ jobs:
     needs: build-erofs-utils
     strategy:
       matrix:
-        pass: [0, 1, 2]
+        pass: [0, 1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v2
       - name: Download erofs-utils prebuilts

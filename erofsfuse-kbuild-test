@@ -3,8 +3,18 @@
 [ "$1" -eq 1 ] && args='-zlz4hc,12'
 if [ "$1" -eq 2 ]; then
 	blks=$((RANDOM % 255 + 2))
-        echo "EROFS pclusterblks=$blks"
+	echo "EROFS pclusterblks=$blks"
 	args="-zlz4hc,12 -C$((blks*4096)) --random-pclusterblks"
+fi
+if [ "$1" -eq 3 ]; then
+	chunksize=$((4096 << (RANDOM % 11)))
+	echo "EROFS chunksize=$chunksize (blockmap)"
+	args="--chunksize $chunksize -Eforce-inode-blockmap"
+fi
+if [ "$1" -eq 4 ]; then
+	chunksize=$((4096 << (RANDOM % 11)))
+	echo "EROFS chunksize=$chunksize (chunkindexes)"
+	args="--chunksize $chunksize -Eforce-chunk-indexes"
 fi
 bin/mkfs.erofs $args lowerdir.erofs.img $2 && rm -rf $2
 mkdir {lower,upper,work}dir linux
