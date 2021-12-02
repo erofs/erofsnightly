@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-erofs-utils:
-    runs-on: macos-latest
+    runs-on: macos-10.15
     steps:
       - uses: actions/checkout@v2
       - name: Build erofs-utils
@@ -28,7 +28,7 @@ jobs:
             erofs-utils/output
 
   erofsfuse-enwik8-smoking:
-    runs-on: macos-latest
+    runs-on: macos-10.15
     needs: build-erofs-utils
     steps:
       - uses: actions/checkout@v2
