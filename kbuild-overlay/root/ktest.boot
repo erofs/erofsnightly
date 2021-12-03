@@ -18,7 +18,7 @@ mount -t overlay -o lowerdir=/tmp/lowerdir,upperdir=/mnt/upperdir,workdir=/mnt/w
        overlay /tmp/kbuild &&
 cd /tmp/kbuild &&
 make defconfig ARCH=x86_64 &&
-make ARCH=x86_64 -j6 &&
+make ARCH=x86_64 -j5 &&
 make mrproper && cd / &&
 umount /tmp/kbuild &&
 umount /tmp/lowerdir &&
