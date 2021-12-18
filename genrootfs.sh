@@ -34,3 +34,4 @@ rm -rf $ROOTDIR/usr/share/man
 find $ROOTDIR/var/log -type f | xargs rm
 
 bin/mkfs.erofs -zlz4hc,12 -C32768 --random-pclusterblks $1 $ROOTDIR
+bin/fsck.erofs $1 || exit 1

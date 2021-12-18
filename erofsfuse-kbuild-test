@@ -17,6 +17,7 @@ if [ "$1" -eq 4 ]; then
 	args="--chunksize $chunksize -Eforce-chunk-indexes"
 fi
 bin/mkfs.erofs $args lowerdir.erofs.img $2 && rm -rf $2
+bin/fsck.erofs lowerdir.erofs.img || exit 1
 mkdir {lower,upper,work}dir linux
 bin/erofsfuse lowerdir.erofs.img lowerdir
 fuse-overlayfs -olowerdir=lowerdir,upperdir=upperdir,workdir=workdir linux

@@ -78,7 +78,7 @@ jobs:
         with:
           path: |
             rootfs_4k.erofs.img
-          key: genrootfs-${{hashFiles('kbuild-overlay', 'genrootfs.sh')}}
+          key: genrootfs-${{hashFiles('.github', 'kbuild-overlay', 'genrootfs.sh')}}
       - name: Download erofs-utils prebuilts
         if: steps.cache-rootfs.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v2
@@ -87,7 +87,8 @@ jobs:
       - name: Generate rootfs
         if: steps.cache-rootfs.outputs.cache-hit != 'true'
         run: |
-          chmod +x bin/mkfs.erofs
+          chmod +x bin/mkfs.erofs bin/fsck.erofs
+          sudo apt update -y
           sudo ./genrootfs.sh rootfs_4k.erofs.img
 
   qemu-kbuild-smoking:
@@ -104,7 +105,7 @@ jobs:
         with:
           path: |
             rootfs_4k.erofs.img
-          key: genrootfs-${{hashFiles('kbuild-overlay', 'genrootfs.sh')}}
+          key: genrootfs-${{hashFiles('.github', 'kbuild-overlay', 'genrootfs.sh')}}
       - name: Download erofs-utils prebuilts
         uses: actions/download-artifact@v2
         with:
@@ -118,7 +119,7 @@ jobs:
           sudo apt update -y
           sudo apt install -y qemu-kvm
           sudo adduser "${USER}" kvm
-          chmod +x bin/mkfs.erofs
+          chmod +x bin/mkfs.erofs bin/fsck.erofs
           ./qemu-kbuild-test bzImage rootfs_4k.erofs.img ${{ matrix.pass }}
       - name: Upload images if the test fails
         uses: actions/upload-artifact@v2
@@ -144,7 +145,7 @@ jobs:
       - name: Build 5.4 LTS kernel image with erofsfuse
         run: |
           sudo apt-get install -y fuse-overlayfs libssl-dev libelf-dev flex bison dwarves
-          chmod +x bin/mkfs.erofs bin/erofsfuse
+          chmod +x bin/mkfs.erofs bin/fsck.erofs bin/erofsfuse
           curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
           ./erofsfuse-kbuild-test ${{ matrix.pass }} linux-5.4.140
       - name: Upload images if the test fails
