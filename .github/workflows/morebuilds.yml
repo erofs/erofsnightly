@@ -19,7 +19,7 @@ jobs:
         pass: [1, 2]
         compiler: [gcc, clang]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build erofs-utilis
         env:
           CC: ${{ matrix.compiler }}

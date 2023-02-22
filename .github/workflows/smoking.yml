@@ -15,7 +15,7 @@ jobs:
   build-kernel:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Clone latest tree
         run: |
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git -b dev-test
@@ -47,7 +47,7 @@ jobs:
   build-erofs-utils:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build erofs-utils
         run: |
           sudo apt-get install -y libfuse-dev libselinux1-dev
@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-20.04
     needs: build-erofs-utils
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Cache rootfs images
         id: cache-rootfs
         uses: actions/cache@v2
@@ -98,7 +98,7 @@ jobs:
       matrix:
         pass: [0, 1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Cache rootfs images
         id: cache-rootfs
         uses: actions/cache@v2
@@ -137,7 +137,7 @@ jobs:
       matrix:
         pass: [0, 1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Download erofs-utils prebuilts
         uses: actions/download-artifact@v2
         with:
@@ -159,7 +159,7 @@ jobs:
     runs-on: ubuntu-20.04
     needs: build-erofs-utils
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Download erofs-utils prebuilts
         uses: actions/download-artifact@v2
         with:

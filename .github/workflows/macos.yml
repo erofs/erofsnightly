@@ -11,7 +11,7 @@ jobs:
   build-erofs-utils:
     runs-on: macos-10.15
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build erofs-utils
         run: |
           brew install autoconf automake git lz4 macfuse
@@ -31,7 +31,7 @@ jobs:
     runs-on: macos-10.15
     needs: build-erofs-utils
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Download erofs-utils prebuilts
         uses: actions/download-artifact@v2
         with:
