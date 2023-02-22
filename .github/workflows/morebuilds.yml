@@ -37,7 +37,7 @@ jobs:
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output
-          ./autogen.sh && ./configure --enable-debug --without-uuid --disable-fuse \
+          ./autogen.sh && ./configure --enable-debug --enable-werror --without-uuid --disable-fuse \
               --host=i686-linux-gnu \
               --prefix=$(pwd)/output \
               --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} \

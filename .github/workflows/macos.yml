@@ -18,7 +18,7 @@ jobs:
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output
-          ./autogen.sh && ./configure --enable-debug --enable-fuse --prefix=$(pwd)/output \
+          ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --prefix=$(pwd)/output \
             && make && make install
       - name: Upload erofs-utils
         uses: actions/upload-artifact@v2
