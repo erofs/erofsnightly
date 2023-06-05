@@ -21,42 +21,41 @@ jobs:
           ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --prefix=$(pwd)/output \
             && make && make install
       - name: Upload erofs-utils
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: erofs-utils
           path: |
             erofs-utils/output
 
-  erofsfuse-enwik8-smoking:
+  erofsfsck-enwik8-smoking:
     runs-on: macos-11
     needs: build-erofs-utils
     steps:
       - uses: actions/checkout@v3
       - name: Download erofs-utils prebuilts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: erofs-utils
-      - name: enwik8 smoke testing with erofsfuse
+      - name: enwik8 smoke testing with fsck.erofs
         run: |
-          brew install macfuse
           mkdir enwik8 out
           curl -L http://mattmahoney.net/dc/enwik8.zip | funzip > enwik8/enwik8
-          chmod +x bin/mkfs.erofs bin/erofsfuse
+          chmod +x bin/mkfs.erofs bin/fsck.erofs
           goldensha=$(shasum enwik8/enwik8 | cut -d' ' -f1)
           echo "EROFS no compression"
           bin/mkfs.erofs -C4096 enwik8.erofs.img enwik8
-          bin/erofsfuse enwik8.erofs.img out
+          bin/fsck.erofs --extract=out enwik8.erofs.img
           [ $(shasum out/enwik8 | cut -d' ' -f1) != $goldensha ] && false
-          umount out && rm -f enwik8.erofs.img
+          rm -rf out enwik8.erofs.img
           echo "EROFS no bigpcluster"
           bin/mkfs.erofs -zlz4hc,12 -C4096 enwik8.lz4.erofs.img enwik8
-          bin/erofsfuse enwik8.lz4.erofs.img out
+          bin/fsck.erofs --extract=out enwik8.lz4.erofs.img
           [ $(shasum out/enwik8 | cut -d' ' -f1) != $goldensha ] && false
-          umount out && rm -f enwik8.lz4.erofs.img
+          rm -rf out enwik8.lz4.erofs.img
           blks=$((RANDOM % 255 + 2))
           echo "EROFS pclusterblks=$blks"
           bin/mkfs.erofs -zlz4hc,12 -C$((blks*4096)) --random-pclusterblks \
             enwik8.lz4.erofs.img enwik8
-          bin/erofsfuse enwik8.lz4.erofs.img out
+          bin/fsck.erofs --extract=out enwik8.lz4.erofs.img
           [ $(shasum out/enwik8 | cut -d' ' -f1) != $goldensha ] && false
-          umount out && rm -rf enwik8.lz4.erofs.img
+          rm -rf out enwik8.lz4.erofs.img
