@@ -1,0 +1,108 @@
+name: fuzzers
+
+on:
+  schedule:
+    # run at CST 9:00 and 21:00
+    - cron:  '0 1,13 * * *'
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-erofs-utils-fuzz:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build erofs-utils for fuzzing
+        run: |
+          sudo apt-get install -y libfuse-dev libselinux1-dev clang
+          curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.3.tar.gz | tar -zxv
+          make BUILD_SHARED=no -C lz4-1.9.3 && lz4libdir=$(pwd)/lz4-1.9.3/lib
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
+          cd erofs-utils
+          mkdir output
+          ./autogen.sh && CC=clang ./configure --enable-werror --enable-fuzzing \
+              --enable-fuse --with-selinux \
+              --prefix=$(pwd)/output \
+              --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
+              make && make install
+          cp -f fsck/fuzz_erofsfsck output/bin
+      - name: Upload erofs-utils-fuzz
+        uses: actions/upload-artifact@v3
+        with:
+          name: erofs-utils-fuzz
+          path: |
+            erofs-utils/output
+
+  gen-initcorpus:
+    runs-on: ubuntu-20.04
+    needs: build-erofs-utils-fuzz
+    steps:
+      - uses: actions/checkout@v3
+      - name: Generate corpus dir if needed
+        id: cache-fuzz-corpus
+        uses: actions/cache@v3
+        with:
+          path: |
+            corpus_dir/
+          key: fuzz_erofsfsck-corpus-${{ runner.os }}-initial
+      - name: Download erofs-utils-fuzz prebuilts
+        if: steps.cache-fuzz-corpus.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v3
+        with:
+          name: erofs-utils-fuzz
+      - name: Generate the initial corpus directory
+        if: steps.cache-fuzz-corpus.outputs.cache-hit != 'true'
+        run: |
+          chmod +x bin/mkfs.erofs
+          mkdir -p test corpus_dir
+          echo hello > test/a
+          ln -s ../../abc > test/b
+          mknod test/c p
+          truncate -s 256k test/d
+          mkdir -p test/e/f
+          bin/mkfs.erofs -zlz4hc -Eztailpacking corpus_dir/corpus.erofs test
+
+  erofsfsck-fuzz:
+    runs-on: ubuntu-20.04
+    needs: gen-initcorpus
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download erofs-utils-fuzz prebuilts
+        uses: actions/download-artifact@v3
+        with:
+          name: erofs-utils-fuzz
+      - name: Restore corpus cache
+        uses: actions/cache/restore@v3
+        id: restore-cache
+        with:
+          path: |
+            corpus_dir/
+          key: fuzz_erofsfsck-corpus-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz_erofsfsck-corpus-${{ runner.os }}
+      - name: Fuzzing with fsck.erofs
+        run: |
+          chmod +x bin/fuzz_erofsfsck
+          mkdir -p artifacts
+          ulimit -s 32768
+          bin/fuzz_erofsfsck -fork=2 -artifact_prefix=./artifacts -timeout=40 -max_total_time=600 -timeout_exitcode=0 corpus_dir
+      - name: Upload artifacts if tests fail
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: erofsfsck-fuzz-artifacts
+          path: |
+            artifacts
+            /tmp/erofsfsck_libfuzzer_*
+
+      - name: Update corpus cache
+        uses: actions/cache/save@v3
+        if: always()
+        with:
+          path: |
+            corpus_dir/
+          key: ${{ steps.restore-cache.outputs.cache-primary-key }}
