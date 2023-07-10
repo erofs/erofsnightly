@@ -28,7 +28,7 @@ jobs:
             make olddefconfig
       - name: Cache bzImage
         id: cache-bzImage
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             erofs/arch/x86/boot/bzImage
@@ -38,7 +38,7 @@ jobs:
         run: |
           cd erofs && make -j32
       - name: Upload bzImage
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: erofs-bzImage
           path: |
@@ -61,7 +61,7 @@ jobs:
               --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
               make && make install
       - name: Upload erofs-utils
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: erofs-utils
           path: |
@@ -74,14 +74,14 @@ jobs:
       - uses: actions/checkout@v3
       - name: Cache rootfs images
         id: cache-rootfs
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             rootfs_4k.erofs.img
           key: genrootfs-${{hashFiles('.github', 'kbuild-overlay', 'genrootfs.sh')}}
       - name: Download erofs-utils prebuilts
         if: steps.cache-rootfs.outputs.cache-hit != 'true'
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: erofs-utils
       - name: Generate rootfs
@@ -101,17 +101,17 @@ jobs:
       - uses: actions/checkout@v3
       - name: Cache rootfs images
         id: cache-rootfs
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             rootfs_4k.erofs.img
           key: genrootfs-${{hashFiles('.github', 'kbuild-overlay', 'genrootfs.sh')}}
       - name: Download erofs-utils prebuilts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: erofs-utils
       - name: Download bzImage
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: erofs-bzImage
       - name: Test with QEMU
@@ -122,7 +122,7 @@ jobs:
           chmod +x bin/mkfs.erofs bin/fsck.erofs
           ./qemu-kbuild-test bzImage rootfs_4k.erofs.img ${{ matrix.pass }}
       - name: Upload images if the test fails
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: qemu-kbuild-images
@@ -139,7 +139,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Download erofs-utils prebuilts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: erofs-utils
       - name: Build 5.4 LTS kernel image with erofsfuse
@@ -149,7 +149,7 @@ jobs:
           curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
           ./erofsfuse-kbuild-test ${{ matrix.pass }} linux-5.4.140
       - name: Upload images if the test fails
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: erofsfuse-kbuild-images
@@ -161,7 +161,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Download erofs-utils prebuilts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: erofs-utils
       - name: enwik8 smoke testing with erofsfuse
