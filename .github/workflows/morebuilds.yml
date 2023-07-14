@@ -28,7 +28,7 @@ jobs:
           CFLAGS=${COMPILER_FLAGS[${{ matrix.pass }}]}
           sudo dpkg --add-architecture i386
           sudo apt-get -qq update
-          sudo apt-get install -y libc6-dev-i386 lib32gcc-10-dev libx32gcc-10-dev
+          sudo apt-get install -y libc6-dev-i386 lib32gcc-10-dev libx32gcc-10-dev zlib1g-dev:i386 libx32z1-dev lib32z1-dev
           [ "${{ matrix.compiler }}" = "clang" ] && sudo apt-get install -y clang++-10
           [ "${{ matrix.compiler }}" = "gcc" ] && sudo apt-get install gcc-multilib
           sudo apt-get install -y --allow-downgrades libpcre2-8-0=10.34-7
