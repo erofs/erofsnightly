@@ -18,7 +18,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Build erofs-utils for fuzzing
         run: |
-          sudo apt-get install -y libfuse-dev libselinux1-dev clang
+          sudo apt -qq update
+          sudo apt install -y libfuse-dev libselinux1-dev clang
           curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.3.tar.gz | tar -zxv
           make BUILD_SHARED=no -C lz4-1.9.3 && lz4libdir=$(pwd)/lz4-1.9.3/lib
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental

@@ -22,6 +22,7 @@ jobs:
           rm -rf erofs/.git       # delete .git to save space
       - name: Set up kernel tree
         run: |
+          sudo apt -qq update
           sudo apt-get install -y libssl-dev libelf-dev flex bison dwarves
           cd erofs
           scripts/kconfig/merge_config.sh -m arch/x86/configs/x86_64_defconfig ../erofs-kernelconfig && \
@@ -50,6 +51,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Build erofs-utils
         run: |
+          sudo apt -qq update
           sudo apt-get install -y libfuse-dev libselinux1-dev
           curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.3.tar.gz | tar -zxv
           make BUILD_SHARED=no -C lz4-1.9.3 && lz4libdir=$(pwd)/lz4-1.9.3/lib
@@ -144,6 +146,7 @@ jobs:
           name: erofs-utils
       - name: Build 5.4 LTS kernel image with erofsfuse
         run: |
+          sudo apt -qq update
           sudo apt-get install -y fuse-overlayfs libssl-dev libelf-dev flex bison dwarves
           chmod +x bin/mkfs.erofs bin/fsck.erofs bin/erofsfuse
           curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
