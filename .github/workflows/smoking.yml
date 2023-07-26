@@ -18,8 +18,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Clone latest tree
         run: |
-          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git -b dev-test
-          rm -rf erofs/.git       # delete .git to save space
+          sudo rm -rf erofs; mkdir -p erofs
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git -b dev-test erofs
       - name: Set up kernel tree
         run: |
           sudo apt -qq update
@@ -27,13 +27,18 @@ jobs:
           cd erofs
           scripts/kconfig/merge_config.sh -m arch/x86/configs/x86_64_defconfig ../erofs-kernelconfig && \
             make olddefconfig
+      - name: Get the HEAD commit ID
+        id: get_version_id
+        run: |
+          echo "scm_version=`cd erofs; git rev-parse --verify HEAD | cut -c1-8`" >> $GITHUB_OUTPUT
+          rm -rf erofs/.git       # delete .git to save space
       - name: Cache bzImage
         id: cache-bzImage
         uses: actions/cache@v3
         with:
           path: |
             erofs/arch/x86/boot/bzImage
-          key: bzImage-${{hashFiles('erofs')}}
+          key: bzImage-${{ steps.get_version_id.outputs.scm_version }}
       - name: Build latest kernel
         if: steps.cache-bzImage.outputs.cache-hit != 'true'
         run: |
