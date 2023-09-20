@@ -22,10 +22,28 @@ if [ "$1" -eq 6 ]; then
 	echo "EROFS DEFLATE pclusterblks=$blks"
 	args="-zdeflate,9 -C$((blks*4096)) --random-pclusterblks"
 fi
-bin/mkfs.erofs $args lowerdir.erofs.img $2 && rm -rf $2
+
+extractDir=""
+
+case "$2" in
+    *.tar.gz )
+        args="$args --gzip --tar=f"
+        extractDir="${2%%.tar.gz}/"
+        ;;
+    *.tgz )
+        args="$args --gzip --tar=f"
+        extractDir="${2%%.tgz}/"
+        ;;
+    *.tar )
+        args="$args --tar=f"
+        extractDir="${2%%.tar}/"
+        ;;
+esac
+
+bin/mkfs.erofs --force-uid="$(id -u)" --force-gid="$(id -g)" $args lowerdir.erofs.img $2 && rm -rf $2
 bin/fsck.erofs lowerdir.erofs.img || exit 1
 mkdir {lower,upper,work}dir linux
 bin/erofsfuse lowerdir.erofs.img lowerdir
 fuse-overlayfs -olowerdir=lowerdir,upperdir=upperdir,workdir=workdir linux
-cd linux && make defconfig && make -j24 && make mrproper && cd ..
+cd linux/$extractDir && make defconfig && make -j24 && make mrproper && cd -
 fusermount -u linux && fusermount -u lowerdir
