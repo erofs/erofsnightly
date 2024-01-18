@@ -25,8 +25,16 @@ bin/mkfs.erofs $args linux.erofs.img linux-5.4.140 && rm -rf linux-5.4.140
 bin/fsck.erofs linux.erofs.img || exit 1
 fallocate -l 11g overlay.ext4.img && mkfs.ext2 -q overlay.ext4.img
 sync
+
+if [ -e /dev/kvm ]; then
+	QEMU_EXTRA_OPTIONS="-enable-kvm"
+	echo "KVM found on this runner"
+else
+	QEMU_EXTRA_OPTIONS="--accel tcg,thread=multi"
+fi
+
 qemu-system-x86_64 -nographic -serial mon:stdio -m $mem -smp 4 \
-	--accel tcg,thread=multi -kernel $1 \
+	${QEMU_EXTRA_OPTIONS} -kernel $1 \
 	-drive file=$2,index=0,readonly,media=cdrom \
 	-hdb linux.erofs.img -hdc overlay.ext4.img \
 	-net nic,model=e1000 -net user \

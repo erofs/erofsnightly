@@ -121,11 +121,16 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: erofs-bzImage
+      - name: Enable KVM group perms
+        run: |
+          sudo adduser "${USER}" kvm
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Test with QEMU
         run: |
           sudo apt update -y
           sudo apt install -y qemu-kvm
-          sudo adduser "${USER}" kvm
           chmod +x bin/mkfs.erofs bin/fsck.erofs
           ./qemu-kbuild-test bzImage rootfs_4k.erofs.img ${{ matrix.pass }}
       - name: Upload images if the test fails
