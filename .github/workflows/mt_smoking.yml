@@ -1,9 +1,9 @@
-name: basicsmoking
+name: mt_smoking
 
 on:
   schedule:
-    # run at CST 10:00 and 22:00
-    - cron:  '0 2,14 * * *'
+    # run at CST 11:00 and 23:00
+    - cron:  '0 3,15 * * *'
   # Allows to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -64,7 +64,7 @@ jobs:
           cd erofs-utils
           mkdir output
           ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --with-selinux \
-              --disable-multithreading \
+              --enable-multithreading \
               --prefix=$(pwd)/output \
               --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
               make && make install
