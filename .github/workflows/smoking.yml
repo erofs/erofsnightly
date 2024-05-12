@@ -57,13 +57,13 @@ jobs:
       - name: Build erofs-utils
         run: |
           sudo apt -qq update
-          sudo apt-get install -y libfuse-dev libselinux1-dev
+          sudo apt-get install -y libfuse-dev libselinux1-dev libzstd-dev
           curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.3.tar.gz | tar -zxv
           make BUILD_SHARED=no -C lz4-1.9.3 && lz4libdir=$(pwd)/lz4-1.9.3/lib
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output
-          ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --with-selinux \
+          ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --with-selinux --with-libzstd \
               --disable-multithreading \
               --prefix=$(pwd)/output \
               --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
@@ -104,7 +104,7 @@ jobs:
     needs: [build-kernel, build-rootfs, build-erofs-utils]
     strategy:
       matrix:
-        pass: [0, 1, 2, 3, 4]
+        pass: [0, 1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v3
       - name: Cache rootfs images
@@ -208,3 +208,15 @@ jobs:
           bin/erofsfuse enwik8.z.erofs out
           [ $(md5sum out/enwik8 | cut -d' ' -f1) != $goldenmd5 ] && false
           fusermount -u out && rm -rf enwik8.z.erofs
+          echo "EROFS ZSTD no bigpcluster"
+          bin/mkfs.erofs -zzstd -C4096 enwik8.zstd.erofs enwik8
+          bin/erofsfuse enwik8.zstd.erofs out
+          [ $(md5sum out/enwik8 | cut -d' ' -f1) != $goldenmd5 ] && false
+          fusermount -u out && rm -f enwik8.zstd.erofs
+          blks=$((RANDOM % 255 + 2))
+          echo "EROFS ZSTD pclusterblks=$blks"
+          bin/mkfs.erofs -zzstd -C$((blks*4096)) --random-pclusterblks \
+            enwik8.zstd.erofs enwik8
+          bin/erofsfuse enwik8.zstd.erofs out
+          [ $(md5sum out/enwik8 | cut -d' ' -f1) != $goldenmd5 ] && false
+          fusermount -u out && rm -rf enwik8.zstd.erofs

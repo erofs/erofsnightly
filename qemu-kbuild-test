@@ -20,6 +20,14 @@ if [ "$3" -eq 4 ]; then
 	echo "EROFS chunksize=$chunksize (chunkindexes)"
 	args="--chunksize $chunksize -Eforce-chunk-indexes"
 fi
+[ "$3" -eq 5 ] && args='-zzstd'
+if [ "$3" -eq 6 ]; then
+	blks=$((RANDOM % 255 + 2))
+	echo "EROFS pclusterblks=$blks"
+	args="-zzstd -C$((blks*4096)) --random-pclusterblks"
+	mem="1G"
+	[ $blks -gt 171 ] && mem="1280M"
+fi
 curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
 bin/mkfs.erofs $args linux.erofs.img linux-5.4.140 && rm -rf linux-5.4.140
 bin/fsck.erofs linux.erofs.img || exit 1
