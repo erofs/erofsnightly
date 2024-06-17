@@ -13,13 +13,13 @@ defaults:
 
 jobs:
   build-erofs-utils:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         pass: [1, 2]
         compiler: [gcc, clang]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build erofs-utilis
         env:
           CC: ${{ matrix.compiler }}
@@ -31,9 +31,9 @@ jobs:
           sudo apt-get install -y libc6-dev-i386 lib32gcc-10-dev libx32gcc-10-dev zlib1g-dev:i386 libx32z1-dev lib32z1-dev
           [ "${{ matrix.compiler }}" = "clang" ] && sudo apt-get install -y clang++-10
           [ "${{ matrix.compiler }}" = "gcc" ] && sudo apt-get install gcc-multilib
-          sudo apt-get install -y --allow-downgrades libpcre2-8-0=10.34-7
-          curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.3.tar.gz | tar -zxv
-          make BUILD_SHARED=no -C lz4-1.9.3 MOREFLAGS=${CFLAGS} && lz4libdir=$(pwd)/lz4-1.9.3/lib
+          sudo apt-get install -y libpcre2-8-0:i386
+          curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar -zxv
+          make BUILD_SHARED=no -C lz4-1.9.4 MOREFLAGS=${CFLAGS} && lz4libdir=$(pwd)/lz4-1.9.4/lib
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output

@@ -9,31 +9,31 @@ on:
 
 jobs:
   build-erofs-utils:
-    runs-on: macos-11
+    runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build erofs-utils
         run: |
-          brew install autoconf automake git lz4 macfuse
+          brew install autoconf automake git lz4 macfuse libtool
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output
           ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --prefix=$(pwd)/output \
             && make && make install
       - name: Upload erofs-utils
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: erofs-utils
           path: |
             erofs-utils/output
 
   erofsfsck-enwik8-smoking:
-    runs-on: macos-11
+    runs-on: macos-latest
     needs: build-erofs-utils
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Download erofs-utils prebuilts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: erofs-utils
       - name: enwik8 smoke testing with fsck.erofs
@@ -42,19 +42,21 @@ jobs:
           curl -L http://mattmahoney.net/dc/enwik8.zip | funzip > enwik8/enwik8
           chmod +x bin/mkfs.erofs bin/fsck.erofs
           goldensha=$(shasum enwik8/enwik8 | cut -d' ' -f1)
+          pgsz=$(getconf PAGESIZE)
+          bsz=$(($pgsz > 4096 ? $pgsz : 4096))
           echo "EROFS no compression"
-          bin/mkfs.erofs -C4096 enwik8.erofs.img enwik8
+          bin/mkfs.erofs -C$bsz enwik8.erofs.img enwik8
           bin/fsck.erofs --extract=out enwik8.erofs.img
           [ $(shasum out/enwik8 | cut -d' ' -f1) != $goldensha ] && false
           rm -rf out enwik8.erofs.img
           echo "EROFS no bigpcluster"
-          bin/mkfs.erofs -zlz4hc,12 -C4096 enwik8.lz4.erofs.img enwik8
+          bin/mkfs.erofs -zlz4hc,12 -C$bsz enwik8.lz4.erofs.img enwik8
           bin/fsck.erofs --extract=out enwik8.lz4.erofs.img
           [ $(shasum out/enwik8 | cut -d' ' -f1) != $goldensha ] && false
           rm -rf out enwik8.lz4.erofs.img
-          blks=$((RANDOM % 255 + 2))
+          blks=$((RANDOM % (1048576/$bsz - 2) + 2))
           echo "EROFS pclusterblks=$blks"
-          bin/mkfs.erofs -zlz4hc,12 -C$((blks*4096)) --random-pclusterblks \
+          bin/mkfs.erofs -zlz4hc,12 -C$((blks*bsz)) --random-pclusterblks \
             enwik8.lz4.erofs.img enwik8
           bin/fsck.erofs --extract=out enwik8.lz4.erofs.img
           [ $(shasum out/enwik8 | cut -d' ' -f1) != $goldensha ] && false
