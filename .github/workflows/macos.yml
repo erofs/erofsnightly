@@ -9,9 +9,9 @@ on:
 
 jobs:
   build-erofs-utils:
-    runs-on: macos-11
+    runs-on: macos-12
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build erofs-utils
         run: |
           brew install autoconf automake git lz4 macfuse
@@ -21,19 +21,19 @@ jobs:
           ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --prefix=$(pwd)/output \
             && make && make install
       - name: Upload erofs-utils
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: erofs-utils
           path: |
             erofs-utils/output
 
   erofsfsck-enwik8-smoking:
-    runs-on: macos-11
+    runs-on: macos-12
     needs: build-erofs-utils
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Download erofs-utils prebuilts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: erofs-utils
       - name: enwik8 smoke testing with fsck.erofs
