@@ -1,1 +1,46 @@
 name: basictest
+
+on:
+  workflow_dispatch:
+ 
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-erofs-utils:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build erofs-utils
+        run: |
+          sudo apt -qq update
+          sudo apt install -y libfuse-dev libselinux1-dev libzstd-dev liblz4-dev liblzma-dev
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental-tests
+          cd erofs-utils
+          ./autogen.sh && ./configure --enable-fuse
+          sudo make check && make install
+      - name: Upload stress test tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-tool
+          path: |
+            erofs-utils/tests/erofsstress/stress
+
+  run-stress-test:
+    runs-on: ubuntu-latest
+    needs: build-erofs-utils
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download stress-test tool
+        uses: actions/download-artifact@v4
+        with:
+          name: stress-tool
+      - name: Start stress test
+        run: |
+          sudo apt -qq update
+          mkdir selisia out
+          curl -L https://mattmahoney.net/dc/silesia.zip | funzip > selisia/selisia
+          chmod +x bin/mkfs.erofs bin/erofsfuse
+          bin/mkfs.erofs -C4096 selisia.erofs.img selisia 
+          bin/erofsfuse selisia.erofs.img out
