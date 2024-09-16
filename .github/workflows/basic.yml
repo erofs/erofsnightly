@@ -18,7 +18,7 @@ jobs:
           sudo apt-get install -y libfuse-dev libselinux1-dev libzstd-dev libfuse2 attr xattr
           curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar -zxv
           make BUILD_SHARED=no -C lz4-1.9.4 && lz4libdir=$(pwd)/lz4-1.9.4/lib
-          git clone https://github.com/Kyrie112/erofs-utils.git
+          git clone https://github.com/erofs/erofs-utils.git -b experimental-tests
           cd erofs-utils
           mkdir output
           ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --with-selinux --with-libzstd \
@@ -41,6 +41,12 @@ jobs:
           name: erofs-utils
           path: |
             erofs-utils/output
+      - name: Upload stress-test tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-test-tool
+          path: |
+            erofs-utils/tests/erofsstress
 
   run-stress-test:
     runs-on: ubuntu-latest
@@ -50,7 +56,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: erofs-utils
-      - name: Make erofs file image
+      - name: Download stress-test tool prebuilts
+        uses: actions/download-artifact@v4
+        with:
+          name: stress-test-tool
+      - name: Make erofs image
         run: |
           sudo apt -qq update
           sudo apt-get install -y libfuse2
@@ -60,10 +70,8 @@ jobs:
           chmod +x bin/mkfs.erofs bin/erofsfuse
           bin/mkfs.erofs -C4096 silesia.erofs.img silesia 
           bin/erofsfuse silesia.erofs.img out
-      - name: Run stress test
+      - name: Run stress test 
         run: |
-          sudo apt-get install gcc
-          git clone https://github.com/erofs/erofsstress.git
-          cd erofsstress
-          gcc stress.c -o stress
-          ./stress -l100 -p2 ../silesia
+          chmod +x stress
+          ./stress -l100 -p3 ../silesia
+          fusermount -u out && rm -rf silesia.erofs.img
