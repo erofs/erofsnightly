@@ -1,77 +1,135 @@
-name: basictest
+name: basics&stress_smoking
 
 on:
+  # Allows to run this workflow manually from the Actions tab
   workflow_dispatch:
- 
+
 defaults:
   run:
     shell: bash
 
 jobs:
+  build-kernel:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone latest tree
+        run: |
+          sudo rm -rf erofs; mkdir -p erofs
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git -b dev-test erofs
+      - name: Set up kernel tree
+        run: |
+          sudo apt -qq update
+          sudo apt-get install -y libssl-dev libelf-dev flex bison dwarves
+          cd erofs
+          scripts/kconfig/merge_config.sh -m arch/x86/configs/x86_64_defconfig ../erofs-kernelconfig && \
+            make olddefconfig
+      - name: Get the HEAD commit ID
+        id: get_version_id
+        run: |
+          echo "scm_version=`cd erofs; git rev-parse --verify HEAD | cut -c1-8`" >> $GITHUB_OUTPUT
+          rm -rf erofs/.git       # delete .git to save space
+      - name: Cache bzImage
+        id: cache-bzImage
+        uses: actions/cache@v4
+        with:
+          path: |
+            erofs/arch/x86/boot/bzImage
+          key: bzImage-${{ steps.get_version_id.outputs.scm_version }}
+      - name: Build latest kernel
+        if: steps.cache-bzImage.outputs.cache-hit != 'true'
+        run: |
+          cd erofs && make -j32
+      - name: Upload bzImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: erofs-bzImage
+          path: |
+            erofs/arch/x86/boot/bzImage
+
   build-erofs-utils:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Build erofs-utils
         run: |
           sudo apt -qq update
-          sudo apt-get install -y libfuse-dev libselinux1-dev libzstd-dev libfuse2 attr xattr
+          sudo apt-get install -y libfuse-dev libselinux1-dev libzstd-dev
           curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar -zxv
           make BUILD_SHARED=no -C lz4-1.9.4 && lz4libdir=$(pwd)/lz4-1.9.4/lib
-          git clone https://github.com/erofs/erofs-utils.git -b experimental-tests
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output
           ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --with-selinux --with-libzstd \
               --disable-multithreading \
               --prefix=$(pwd)/output \
-              --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir}
-          sudo make check
-          make install
-        timeout-minutes: 10
-      - name: Upload results if build failed
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: results-output
-          path: |
-            erofs-utils/tests/results/erofs
+              --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
+              make && make install
       - name: Upload erofs-utils
         uses: actions/upload-artifact@v4
         with:
           name: erofs-utils
           path: |
             erofs-utils/output
-      - name: Upload stress-test tool
-        uses: actions/upload-artifact@v4
-        with:
-          name: stress-test-tool
-          path: |
-            erofs-utils/tests/erofsstress
 
-  run-stress-test:
-    runs-on: ubuntu-latest
+  build-rootfs:
+    runs-on: ubuntu-22.04
     needs: build-erofs-utils
     steps:
+      - uses: actions/checkout@v4
+      - name: Cache rootfs images
+        id: cache-rootfs
+        uses: actions/cache@v4
+        with:
+          path: |
+            rootfs_4k.erofs.img
+          key: genrootfs-${{hashFiles('.github', 'kbuild-overlay', 'genrootfs.sh')}}
+      - name: Download erofs-utils prebuilts
+        if: steps.cache-rootfs.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: erofs-utils
+      - name: Generate rootfs
+        if: steps.cache-rootfs.outputs.cache-hit != 'true'
+        run: |
+          chmod +x bin/mkfs.erofs bin/fsck.erofs
+          sudo apt update -y
+          sudo ./genrootfs.sh rootfs_4k.erofs.img
+
+  qemu-basic-smoking:
+    runs-on: ubuntu-22.04
+    needs: [build-kernel, build-rootfs, build-erofs-utils]
+    strategy:
+      matrix:
+        pass: [0, 1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache rootfs images
+        id: cache-rootfs
+        uses: actions/cache@v4
+        with:
+          path: |
+            rootfs_4k.erofs.img
+          key: genrootfs-${{hashFiles('.github', 'kbuild-overlay', 'genrootfs.sh')}}
       - name: Download erofs-utils prebuilts
         uses: actions/download-artifact@v4
         with:
           name: erofs-utils
-      - name: Download stress-test tool prebuilts
+      - name: Download bzImage
         uses: actions/download-artifact@v4
         with:
-          name: stress-test-tool
-      - name: Make erofs image
+          name: erofs-bzImage
+      - name: Test with QEMU
         run: |
-          sudo apt -qq update
-          sudo apt-get install -y libfuse2
-          mkdir silesia out
-          wget -O silesia.zip https://mattmahoney.net/dc/silesia.zip
-          unzip silesia.zip -d silesia
-          chmod +x bin/mkfs.erofs bin/erofsfuse
-          bin/mkfs.erofs -C4096 silesia.erofs.img silesia 
-          bin/erofsfuse silesia.erofs.img out
-      - name: Run stress test 
-        run: |
-          chmod +x stress
-          ./stress -l100 -p3 ../silesia
-          fusermount -u out && rm -rf silesia.erofs.img
+          sudo apt update -y
+          sudo apt install -y qemu-kvm
+          sudo adduser "${USER}" kvm
+          chmod +x bin/mkfs.erofs bin/fsck.erofs bin/erofsfuse qemu-basic-test
+          ./qemu-basic-test bzImage rootfs_4k.erofs.img ${{ matrix.pass }}
+      - name: Upload images if the test fails
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-kbuild-images
+          path: |
+            *.img
