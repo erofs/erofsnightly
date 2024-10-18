@@ -1,44 +1,16 @@
 #!/bin/bash
 
-mem="1G"
+mem="12G"
 args='-zlz4hc,12'
 
 curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
 bin/mkfs.erofs $args linux.erofs.img linux-5.4.140 && rm -rf linux-5.4.140
 bin/fsck.erofs linux.erofs.img || exit 1
 fallocate -l 11g overlay.ext4.img && mkfs.ext2 -q overlay.ext4.img
-chmod +x basic_test.sh
 sync
 qemu-system-x86_64 -nographic -serial mon:stdio -m $mem -smp 4 \
 	--accel tcg,thread=multi -kernel $1 \
-	-drive file=$2,index=0,readonly,media=cdrom \
+	-drive file=$2,index=0,media=cdrom \
 	-hdb linux.erofs.img -hdc overlay.ext4.img \
 	-net nic,model=e1000 -net user \
-	-append "net.ifnames=0 root=/dev/sr0 console=ttyS0" 
-
-# run test
-
-# Download dependent libraries and tools
-sudo apt -qq update
-sudo apt-get install -y libfuse-dev libselinux1-dev libzstd-dev libfuse2
-curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar -zxv
-make BUILD_SHARED=no -C lz4-1.9.4 && lz4libdir=$(pwd)/lz4-1.9.4/lib
-git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental-tests
-
-# Build experimental-test branch of erofs-utils and run basic-test
-cd erofs-utils
-./autogen.sh && ./configure
-sudo make check
-
-# Prepare test data benchmark
-cd ../ && mkdir silesia out
-wget -O silesia.zip https://mattmahoney.net/dc/silesia.zip
-unzip silesia.zip -d silesia
-bin/mkfs.erofs -C4096 silesia.erofs.img silesia 
-bin/erofsfuse silesia.erofs.img out
-
-# Run stress test
-git clone https://github.com/erofs/erofsstress.git
-gcc erofsstress/stress.c -o stress
-./stress -l100 -p3 ./out
-# ./erofs-utils/tests/erofsstress/stress -l100 -p3 ./out
+	-append "net.ifnames=0 root=/dev/sr0 console=ttyS0"

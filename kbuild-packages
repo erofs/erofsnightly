@@ -7,3 +7,17 @@ systemd
 systemd-sysv
 udev
 wget
+autoconf
+automake
+libfuse-dev
+libzstd-dev
+libselinux1-dev
+liblz4-dev
+liblzma-dev
+libtool
+pkg-config
+uuid-dev
+zlib1g-dev
+attr
+git
+unzip
