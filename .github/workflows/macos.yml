@@ -14,11 +14,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build erofs-utils
         run: |
-          brew install autoconf automake git lz4 macfuse libtool
+          brew install autoconf automake git lz4 libtool
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
           cd erofs-utils
           mkdir output
-          ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --prefix=$(pwd)/output \
+          ./autogen.sh && ./configure --enable-debug --enable-werror --prefix=$(pwd)/output \
             && make && make install
       - name: Upload erofs-utils
         uses: actions/upload-artifact@v4
