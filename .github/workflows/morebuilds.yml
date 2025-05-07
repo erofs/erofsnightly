@@ -43,3 +43,23 @@ jobs:
               --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} \
               "CFLAGS=${CFLAGS}" "CPPFLAGS=${CFLAGS}" "CXXFLAGS=${CFLAGS}" "LDFLAGS=${CFLAGS}" && \
               make && make install
+
+  build-erofs-utils-musl:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build erofs-utilis
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get install -y musl-tools
+          curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar -zxv
+          make BUILD_SHARED=no -C lz4-1.9.4 MOREFLAGS=${CFLAGS} && lz4libdir=$(pwd)/lz4-1.9.4/lib
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
+          cd erofs-utils
+          mkdir output
+          ./autogen.sh && CC=musl-gcc PKG_CONFIG="pkg-config --static" \
+              ./configure --enable-debug --enable-werror --without-uuid \
+              --prefix=$(pwd)/output \
+              --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} \
+              "CFLAGS=${CFLAGS}" "CPPFLAGS=${CFLAGS}" "CXXFLAGS=${CFLAGS}" "LDFLAGS=${CFLAGS}" && \
+              make && make install
