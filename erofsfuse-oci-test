@@ -1,0 +1,81 @@
+#!/bin/bash
+
+set -e
+
+[ "$1" -eq 1 ] && args='-zlz4hc,12'
+if [ "$1" -eq 2 ]; then
+	blks=$((RANDOM % 255 + 2))
+	echo "EROFS pclusterblks=$blks"
+	args="-zlz4hc,12 -C$((blks*4096)) --random-pclusterblks"
+fi
+if [ "$1" -eq 3 ]; then
+	chunksize=$((4096 << (RANDOM % 11)))
+	echo "EROFS chunksize=$chunksize (blockmap)"
+	args="--chunksize $chunksize -Eforce-inode-blockmap"
+fi
+if [ "$1" -eq 4 ]; then
+	chunksize=$((4096 << (RANDOM % 11)))
+	echo "EROFS chunksize=$chunksize (chunkindexes)"
+	args="--chunksize $chunksize -Eforce-chunk-indexes"
+fi
+[ "$1" -eq 5 ] && args='-zdeflate,9'
+if [ "$1" -eq 6 ]; then
+	blks=$((RANDOM % 255 + 2))
+	echo "EROFS DEFLATE pclusterblks=$blks"
+	args="-zdeflate,9 -C$((blks*4096)) --random-pclusterblks"
+fi
+
+# OCI image name (default to alpine if not specified)
+OCI_IMAGE="${2:-alpine:latest}"
+echo "Testing OCI image: $OCI_IMAGE"
+
+# Cleanup function
+cleanup() {
+	echo "Cleaning up..."
+	fusermount -u oci-erofs-mount 2>/dev/null || true
+	rm -rf oci-reference oci-erofs-mount oci-image.tar oci-temp
+}
+
+trap cleanup EXIT
+
+# Step 1: Download OCI image and extract as reference
+skopeo copy "docker://$OCI_IMAGE" docker-archive:oci-image.tar
+
+# Step 2: Extract OCI image structure
+mkdir -p oci-temp
+tar -xf oci-image.tar -C oci-temp
+
+# Step 3: Find and extract the first layer (layer 0)
+mkdir -p oci-reference
+
+# Find the first layer tar from manifest
+FIRST_LAYER=$(jq -r '.[0].Layers[0]' oci-temp/manifest.json)
+
+# Extract the layer tar to get actual filesystem
+tar -xf "oci-temp/$FIRST_LAYER" -C oci-reference
+
+# Clean up OCI temp structure
+rm -rf oci-temp
+
+# Step 4: Build EROFS image from OCI
+bin/mkfs.erofs --force-uid="$(id -u)" --force-gid="$(id -g)" $args --oci=f oci.erofs.img $OCI_IMAGE
+
+bin/fsck.erofs oci.erofs.img || exit 1
+mkdir -p oci-erofs-mount
+bin/erofsfuse oci.erofs.img oci-erofs-mount
+
+# Step 5: Verify contents by comparing hashes
+ref_hash=$(tar --sort=name --mode=0777 --owner=0 --group=0 --mtime='@0' --clamp-mtime -C oci-reference -cf - . | sha256sum | awk '{print $1}')
+echo "Reference hash: $ref_hash"
+erofs_hash=$(tar --sort=name --mode=0777 --owner=0 --group=0 --mtime='@0' --clamp-mtime -C oci-erofs-mount -cf - . | sha256sum | awk '{print $1}')
+echo "EROFS hash: $erofs_hash"
+
+# Compare hashes
+if [ "$ref_hash" = "$erofs_hash" ]; then
+	echo "✓ Hash verification PASSED - directories are identical!"
+else
+	echo "✗ ERROR: Hash mismatch!"
+	echo "  Reference: $ref_hash"
+	echo "  EROFS:     $erofs_hash"
+	exit 1
+fi
