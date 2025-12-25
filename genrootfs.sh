@@ -20,7 +20,7 @@ PACKAGES=$(echo $PACKAGES | sed 's/ /,/g')
 
 apt-get install -y debootstrap
 mkdir -p $ROOTDIR
-debootstrap --variant=minbase --include=$PACKAGES buster $ROOTDIR $MIRROR
+debootstrap --variant=minbase --include=$PACKAGES trixie $ROOTDIR $MIRROR
 tar -C kbuild-overlay \
 	--owner=root --group=root --mode=go+u-w -c . | tar -C $ROOTDIR -x
 run_in_chroot "systemctl disable systemd-timesyncd"
