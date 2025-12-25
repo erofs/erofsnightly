@@ -1,14 +1,14 @@
 #!/bin/bash
 
-mem="768M"
+mem="1G"
 
 [ "$3" -eq 1 ] && args='-zlz4hc,12'
 if [ "$3" -eq 2 ]; then
 	blks=$((RANDOM % 255 + 2))
 	echo "EROFS pclusterblks=$blks"
 	args="-zlz4hc,12 -C$((blks*4096)) --random-pclusterblks"
-	mem="1G"
-	[ $blks -gt 171 ] && mem="1280M"
+	mem="1152M"
+	[ $blks -gt 171 ] && mem="1408M"
 fi
 if [ "$3" -eq 3 ]; then
 	chunksize=$((4096 << (RANDOM % 11)))
@@ -25,11 +25,11 @@ if [ "$3" -eq 6 ]; then
 	blks=$((RANDOM % 255 + 2))
 	echo "EROFS pclusterblks=$blks"
 	args="-zzstd -C$((blks*4096)) --random-pclusterblks"
-	mem="1G"
-	[ $blks -gt 171 ] && mem="1280M"
+	mem="1152M"
+	[ $blks -gt 171 ] && mem="1408M"
 fi
-curl https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.140.tar.gz | tar -zx
-bin/mkfs.erofs $args linux.erofs.img linux-5.4.140 && rm -rf linux-5.4.140
+curl https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.63.tar.xz | tar -Jx
+bin/mkfs.erofs $args linux.erofs.img linux-6.12.63 && rm -rf linux-6.12.63
 bin/fsck.erofs linux.erofs.img || exit 1
 fallocate -l 11g overlay.ext4.img && mkfs.ext2 -q overlay.ext4.img
 sync
