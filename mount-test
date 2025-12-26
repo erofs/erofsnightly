@@ -1,0 +1,275 @@
+#!/bin/bash
+
+set -ex
+
+OCI_IMAGE="ghcr.io/erofs/alpine:3.23.2"
+EROFS_IMAGE="ghcr.io/erofs/alpine:3.23.2-erofs"
+EROFS_IMAGE_MULTILAYER="ghcr.io/erofs/nginx:1.28.1-alpine-erofs"
+NONEXISTENT_IMAGE="ghcr.io/erofs/nonexistent-image-12345:latest"
+
+# Test type (required: local, nbdlocal, or nbdoci)
+TEST_TYPE="${1}"
+
+if [ -z "$TEST_TYPE" ]; then
+    echo "Error: Test type is required. Usage: $0 <local|nbdlocal|nbdoci>"
+    exit 1
+fi
+
+if [ "$TEST_TYPE" != "local" ] && [ "$TEST_TYPE" != "nbdlocal" ] && [ "$TEST_TYPE" != "nbdoci" ]; then
+    echo "Error: Invalid test type '$TEST_TYPE'. Must be 'local', 'nbdlocal', or 'nbdoci'."
+    exit 1
+fi
+
+echo "Test type: $TEST_TYPE"
+
+# Test counters
+TOTAL_TESTS=0
+PASSED_TESTS=0
+FAILED_TESTS=0
+
+# Test directory setup
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_IMAGES_DIR="${SCRIPT_DIR}/test-images"
+MOUNT_POINTS_DIR="${SCRIPT_DIR}/mount-points"
+MOUNT_EROFS="bin/mount.erofs"
+MKFS_EROFS="bin/mkfs.erofs"
+
+# Cleanup test environment
+cleanup() {
+    # Unmount all possible mount points
+    for mp in "${MOUNT_POINTS_DIR}"/*; do
+        if [ -d "$mp" ] && mountpoint -q "$mp" 2>/dev/null; then
+            sudo "$MOUNT_EROFS" -u "$mp" 2>/dev/null || true
+        fi
+    done
+    # Clean up test directories
+    rm -rf "${MOUNT_POINTS_DIR}"
+
+    # Only delete test images if all tests passed
+    if [ $FAILED_TESTS -eq 0 ]; then
+        rm -rf "${TEST_IMAGES_DIR}"
+    else
+        echo "Test failed. Test images preserved in: ${TEST_IMAGES_DIR}"
+    fi
+}
+
+# Trap exit signals
+trap cleanup EXIT
+
+# Print test result
+print_test_result() {
+    local test_name="$1"
+    local result="$2"
+    local message="$3"
+
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
+
+    if [ "$result" = "PASS" ]; then
+        echo "[PASS] $test_name"
+        PASSED_TESTS=$((PASSED_TESTS + 1))
+    else
+        echo "[FAIL] $test_name: $message"
+        FAILED_TESTS=$((FAILED_TESTS + 1))
+    fi
+}
+
+setup_test_environment() {
+    # Check prerequisites
+    if [ ! -f "$MOUNT_EROFS" ]; then
+        echo "Error: mount.erofs not found: $MOUNT_EROFS"
+        exit 1
+    fi
+
+    if [ ! -f "$MKFS_EROFS" ]; then
+        echo "Error: mkfs.erofs not found: $MKFS_EROFS"
+        exit 1
+    fi
+
+    # Create test directories
+    mkdir -p "${TEST_IMAGES_DIR}"
+    mkdir -p "${MOUNT_POINTS_DIR}"
+
+    # Always create shared test images for comparison
+    SHARED_IMAGE="${TEST_IMAGES_DIR}/shared_valid.erofs.img"
+    echo "Creating shared EROFS image from OCI image: $OCI_IMAGE"
+    create_valid_image "$SHARED_IMAGE" "$OCI_IMAGE"
+
+    SHARED_INVALID_IMAGE="${TEST_IMAGES_DIR}/shared_invalid.erofs.img"
+    create_non_erofs_image "$SHARED_INVALID_IMAGE"
+}
+
+# Create valid test image from OCI image
+create_valid_image() {
+    local image_path="$1"
+    local oci_image="${2:-$OCI_IMAGE}"
+
+    # Build EROFS image from OCI
+    echo "Building EROFS image from $oci_image..."
+    if ! "$MKFS_EROFS" --force-uid="$(id -u)" --force-gid="$(id -g)" --oci=f,username="$REGISTRY_USERNAME",password="$REGISTRY_PASSWORD" "$image_path" "$oci_image"; then
+        echo "Error: Failed to create EROFS image from OCI image: $oci_image"
+        exit 1
+    fi
+    echo "Successfully created EROFS image: $image_path"
+}
+
+# Create non-EROFS format image
+create_non_erofs_image() {
+    local image_path="$1"
+    dd if=/dev/zero of="$image_path" bs=1M count=10 &>/dev/null
+    mkfs.ext4 -F "$image_path" &>/dev/null
+}
+
+# Args:
+#   $1: mount_type - Type of mount (e.g., "erofs.local", "erofs.nbd")
+#   $2: source - Image source (local path or OCI image reference)
+#   $3: test_name - Test name
+#   $4: mount_option - Optional mount options (default: empty)
+test_valid_mount() {
+    local mount_type="$1"
+    local source="$2"
+    local test_name="$3"
+    local mount_option="${4:-}"
+    local mountpoint="${MOUNT_POINTS_DIR}/${test_name}_mount"
+
+    mkdir -p "$mountpoint"
+
+    # Try to mount
+    local mount_cmd=("$MOUNT_EROFS" -t "$mount_type")
+    if [ -n "$mount_option" ]; then
+        mount_cmd+=(-o "$mount_option")
+    fi
+    mount_cmd+=("$source" "$mountpoint")
+
+    if ! sudo "${mount_cmd[@]}" &>/dev/null; then
+        print_test_result "$test_name" "FAIL" "mount command failed"
+        rm -rf "$mountpoint"
+        return 1
+    fi
+
+    # Verify mount point
+    if ! mountpoint -q "$mountpoint"; then
+        print_test_result "$test_name" "FAIL" "mount point not mounted"
+        rm -rf "$mountpoint"
+        return 1
+    fi
+
+    # Verify file access - check if mounted directory is not empty
+    if [ -z "$(ls -A "$mountpoint" 2>/dev/null)" ]; then
+        print_test_result "$test_name" "FAIL" "mounted but directory is empty"
+        sudo "$MOUNT_EROFS" -u "$mountpoint" 2>/dev/null || true
+        rm -rf "$mountpoint"
+        return 1
+    fi
+
+    # Compare with reference mount
+    local ref_mountpoint="${mountpoint}_ref"
+    mkdir -p "$ref_mountpoint"
+
+    # Mount reference image (always use local SHARED_IMAGE)
+    if ! sudo mount -o loop,ro "$SHARED_IMAGE" "$ref_mountpoint" &>/dev/null; then
+        print_test_result "$test_name" "FAIL" "reference mount failed"
+        sudo "$MOUNT_EROFS" -u "$mountpoint" 2>/dev/null || true
+        rm -rf "$mountpoint" "$ref_mountpoint"
+        return 1
+    fi
+
+    # Compare the two mounted directories
+    if ! sudo diff -r --no-dereference "$mountpoint" "$ref_mountpoint" &>/dev/null; then
+        local msg="content mismatch between mount methods"
+        # Detect if source is a remote OCI reference
+        if [[ "$source" =~ ^(ghcr\.io|localhost:[0-9]+)/ ]]; then
+            msg="content mismatch between registry and local"
+        fi
+        print_test_result "$test_name" "FAIL" "$msg"
+        sudo "$MOUNT_EROFS" -u "$mountpoint" 2>/dev/null || true
+        sudo umount "$ref_mountpoint" 2>/dev/null || true
+        rm -rf "$mountpoint" "$ref_mountpoint"
+        return 1
+    fi
+
+    # Cleanup reference mount
+    sudo umount "$ref_mountpoint" 2>/dev/null || true
+    rm -rf "$ref_mountpoint"
+
+    # Test umount
+    if ! sudo "$MOUNT_EROFS" -u "$mountpoint" &>/dev/null; then
+        print_test_result "$test_name" "FAIL" "umount command failed"
+        sudo "$MOUNT_EROFS" -u "$mountpoint" 2>/dev/null || true
+        rm -rf "$mountpoint"
+        return 1
+    fi
+
+    # Verify umount succeeded
+    if mountpoint -q "$mountpoint"; then
+        print_test_result "$test_name" "FAIL" "still mounted after umount"
+        rm -rf "$mountpoint"
+        return 1
+    fi
+
+    print_test_result "$test_name" "PASS" ""
+    rm -rf "$mountpoint"
+    return 0
+}
+
+# Args:
+#   $1: mount_type - Type of mount (e.g., "erofs.local", "erofs.nbd")
+#   $2: source - Image source (local path or OCI image reference)
+#   $3: test_name - Test name
+#   $4: mount_option - Optional mount options (default: empty)
+test_invalid_mount() {
+    local mount_type="$1"
+    local source="$2"
+    local test_name="$3"
+    local mount_option="${4:-}"
+
+    local mountpoint="${MOUNT_POINTS_DIR}/${test_name}_mount"
+
+    mkdir -p "$mountpoint"
+
+    # Try to mount
+    local mount_cmd=("$MOUNT_EROFS" -t "$mount_type")
+    if [ -n "$mount_option" ]; then
+        mount_cmd+=(-o "$mount_option")
+    fi
+    mount_cmd+=("$source" "$mountpoint")
+
+    if sudo "${mount_cmd[@]}" &>/dev/null; then
+        print_test_result "$test_name" "FAIL" "should fail but mounted successfully"
+        sudo "$MOUNT_EROFS" -u "$mountpoint" 2>/dev/null || true
+    else
+        print_test_result "$test_name" "PASS" ""
+    fi
+
+    rm -rf "$mountpoint"
+}
+
+setup_test_environment
+
+# Run tests based on test type
+if [ "$TEST_TYPE" = "local" ]; then
+    echo "Running local mount tests..."
+    test_valid_mount "erofs.local" "$SHARED_IMAGE" "test_valid_mount_local"
+    test_invalid_mount "erofs.local" "$SHARED_INVALID_IMAGE" "test_invalid_mount_local_non_erofs"
+elif [ "$TEST_TYPE" = "nbdlocal" ]; then
+    echo "Running NBD local mount tests..."
+    test_valid_mount "erofs.nbd" "$SHARED_IMAGE" "test_valid_mount_nbd_local"
+    test_invalid_mount "erofs.nbd" "$SHARED_INVALID_IMAGE" "test_invalid_mount_nbd_local_non_erofs"
+elif [ "$TEST_TYPE" = "nbdoci" ]; then
+    echo "Running NBD remote mount tests..."
+    # Single-layer OCI image
+    test_valid_mount "erofs.nbd" "$EROFS_IMAGE" "test_valid_mount_nbd_remote_single_layer" "oci.layer=0,oci.username=$REGISTRY_USERNAME,oci.password=$REGISTRY_PASSWORD"
+    # Single-layer OCI image, invalid layer
+    test_invalid_mount "erofs.nbd" "$EROFS_IMAGE" "test_invalid_mount_nbd_remote_invalid_layer" "oci.layer=5,oci.username=$REGISTRY_USERNAME,oci.password=$REGISTRY_PASSWORD"
+    # Multi-layer OCI image
+    test_valid_mount "erofs.nbd" "$EROFS_IMAGE_MULTILAYER" "test_valid_mount_nbd_remote_multi_layer" "oci.layer=0,oci.username=$REGISTRY_USERNAME,oci.password=$REGISTRY_PASSWORD"
+    # Non-existent OCI image
+    test_invalid_mount "erofs.nbd" "$NONEXISTENT_IMAGE" "test_invalid_mount_nbd_remote_nonexistent" "oci.layer=0,oci.username=$REGISTRY_USERNAME,oci.password=$REGISTRY_PASSWORD"
+    # Non-EROFS OCI image
+    test_invalid_mount "erofs.nbd" "$OCI_IMAGE" "test_invalid_mount_nbd_remote_non_erofs" "oci.layer=0,oci.username=$REGISTRY_USERNAME,oci.password=$REGISTRY_PASSWORD"
+fi
+
+if [ $FAILED_TESTS -eq 0 ]; then
+    exit 0
+else
+    exit 1
+fi
