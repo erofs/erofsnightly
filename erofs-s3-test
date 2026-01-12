@@ -1,0 +1,107 @@
+#!/bin/bash
+
+set -e
+
+# Parse arguments
+S3_ENDPOINT="$1"
+S3_BUCKET="$2"
+URLSTYLE="${3:-path}"
+SIG="${4:-2}"
+AWS_ACCESS_KEY_ID="${5:-minioadmin}"
+AWS_SECRET_ACCESS_KEY="${6:-minioadmin}"
+OPTS="${7:-}"
+# Export AWS credentials for mkfs.erofs
+export AWS_ACCESS_KEY_ID
+export AWS_SECRET_ACCESS_KEY
+
+# Create S3 password file
+S3_PASSWD_FILE="s3-passwd-$$.txt"
+echo "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" > "$S3_PASSWD_FILE"
+
+# Configure S3 parameters
+s3_opts="urlstyle=$URLSTYLE,sig=$SIG,passwd_file=$S3_PASSWD_FILE"
+
+# SigV4 requires region parameter
+if [ "$SIG" -eq 4 ]; then
+	s3_opts="$s3_opts,region=us-east-1"
+	export AWS_DEFAULT_REGION=us-east-1
+fi
+
+echo "Testing S3 bucket: $S3_BUCKET at endpoint: $S3_ENDPOINT"
+echo "URL style: $URLSTYLE"
+echo "Signature version: $SIG"
+echo "Options: ${OPTS:-none}"
+echo "S3 options: $s3_opts"
+
+# Cleanup function
+cleanup() {
+	echo "Cleaning up..."
+	sudo umount linux 2>/dev/null || true
+	sudo umount lowerdir 2>/dev/null || true
+	rm -rf s3-reference lowerdir upperdir workdir linux
+	rm -f "$S3_PASSWD_FILE"
+}
+
+trap cleanup EXIT
+
+# Step 1: Build EROFS image from S3 bucket
+echo "Building EROFS image from S3 bucket..."
+bin/mkfs.erofs --force-uid="$(id -u)" --force-gid="$(id -g)" $OPTS \
+	--s3="$S3_ENDPOINT,$s3_opts" s3.erofs.img "$S3_BUCKET"
+
+# Step 2: Verify filesystem integrity
+echo "Verifying EROFS image integrity..."
+bin/fsck.erofs s3.erofs.img || exit 1
+
+# Step 3: Mount EROFS image
+echo "Mounting EROFS image..."
+mkdir -p {lowerdir,upperdir,workdir,linux}
+
+# Mount EROFS image as lower layer
+sudo mount -o loop -t erofs s3.erofs.img lowerdir
+
+# Step 4: Download reference data from S3 bucket
+echo "Downloading reference data from S3 bucket..."
+mkdir -p s3-reference
+
+# Download all files from S3 bucket
+echo "Downloading files from s3://$S3_BUCKET to s3-reference/..."
+./mc cp --recursive "local/test-bucket/" s3-reference/
+
+echo "Download complete. Downloaded file count: $(find s3-reference -type f | wc -l)"
+
+# Step 5: Compare directories using diff
+echo "Comparing S3 reference with EROFS mount..."
+if diff -r --no-dereference s3-reference/ lowerdir/; then
+	echo "✓ Directory comparison PASSED - S3 bucket and EROFS image are identical!"
+	
+	# Additional checks
+	echo ""
+	echo "Additional verification:"
+	echo "S3 reference file count: $(find s3-reference -type f | wc -l)"
+	echo "EROFS file count: $(find lowerdir -type f | wc -l)"
+	echo "EROFS image size: $(du -h s3.erofs.img | cut -f1)"
+else
+	echo "✗ ERROR: Directories differ!"
+	echo "See diff output above for details"
+	exit 1
+fi
+
+# Step 6: Build Linux kernel using overlayfs
+echo ""
+echo "Step 6: Testing kernel build..."
+
+# Create overlay filesystem
+sudo mount -t overlay -olowerdir=lowerdir,upperdir=upperdir,workdir=workdir overlay linux
+
+echo "Building Linux kernel in overlay mount..."
+cd linux
+find . \( -name "*.sh" -o -name "*.py" -o ! -name "*.*" \) -type f -exec chmod +x {} \;
+make defconfig
+make -j$(nproc)
+echo "Cleaning kernel build..."
+make mrproper
+cd -
+
+echo "✓ Kernel build test PASSED!"
+exit 0
