@@ -1,0 +1,61 @@
+name: mkfs-random-features
+
+on:
+  schedule:
+    # run at CST {2, 8, 14, 20}:00
+    - cron:  '0 0,6,12,18 * * *'
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build-erofs-utils:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build erofs-utils
+        run: |
+          sudo apt -qq update
+          sudo apt-get install -y libfuse-dev libselinux1-dev
+          curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar -zxv
+          make BUILD_SHARED=no -C lz4-1.9.4 && lz4libdir=$(pwd)/lz4-1.9.4/lib
+          git clone ${{ vars.EROFSUTILS_SOURCE_URL }} -b experimental erofs-utils
+          cd erofs-utils
+          mkdir output
+          ./autogen.sh && ./configure --enable-debug --enable-werror --enable-fuse --with-selinux \
+              --prefix=$(pwd)/output \
+              --with-lz4-incdir=${lz4libdir} --with-lz4-libdir=${lz4libdir} && \
+              make && make install
+      - name: Upload erofs-utils
+        uses: actions/upload-artifact@v4
+        with:
+          name: erofs-utils
+          path: |
+            erofs-utils/output
+
+  mkfs-coverage-random:
+    runs-on: ubuntu-22.04
+    needs: build-erofs-utils
+    strategy:
+      fail-fast: false
+      matrix:
+        run_id: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download erofs-utils prebuilts
+        uses: actions/download-artifact@v4
+        with:
+          name: erofs-utils
+      - name: Test mkfs.erofs with random --zfeature-bits
+        run: |
+          sudo apt -qq update
+          sudo apt-get install -y libfuse2 libssl-dev libelf-dev flex bison dwarves liblz4-1 libzstd1
+          chmod +x bin/mkfs.erofs bin/fsck.erofs bin/erofsfuse
+          RANDOM_BITS=$((RANDOM % 256))
+          echo "Testing with randomly generated --zfeature-bits=$RANDOM_BITS"
+          ./mkfs-features-test $RANDOM_BITS
+      - name: Upload images if the test fails
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: mkfs-features-images-random-${{ matrix.run_id }}
+          path: '*.img'

@@ -1,0 +1,77 @@
+#!/bin/bash
+
+set -e
+
+ZFEATURE_BITS="${1:-0}"
+
+echo "=========================================="
+echo "Testing mkfs.erofs with --zfeature-bits=$ZFEATURE_BITS"
+echo "=========================================="
+
+# Cleanup function
+cleanup() {
+	echo "Cleaning up..."
+	fusermount -u linux 2>/dev/null || true
+	fusermount -u lowerdir 2>/dev/null || true
+	rm -rf linux-source lowerdir upperdir workdir linux linux.erofs.img
+}
+
+trap cleanup EXIT
+
+# Step 1: Download Linux kernel source
+echo "Step 1: Downloading Linux kernel source..."
+curl -L https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.63.tar.xz | tar -Jx
+mv linux-6.12.63 linux-source
+
+# Step 2: Build EROFS image with specified zfeature-bits
+echo "Step 2: Building EROFS image with --zfeature-bits=$ZFEATURE_BITS..."
+if ! bin/mkfs.erofs --force-uid="$(id -u)" --force-gid="$(id -g)" --zfeature-bits=$ZFEATURE_BITS linux.erofs.img linux-source; then
+	echo "✗ ERROR: mkfs.erofs failed with --zfeature-bits=$ZFEATURE_BITS"
+	echo "This parameter combination may have triggered a bug in mkfs.erofs"
+	exit 1
+fi
+
+# Step 3: Verify filesystem integrity
+echo "Step 3: Verifying EROFS image integrity..."
+if ! bin/fsck.erofs linux.erofs.img; then
+	echo "✗ ERROR: fsck.erofs failed for image built with --zfeature-bits=$ZFEATURE_BITS"
+	echo "This parameter combination may have triggered a bug in mkfs.erofs"
+	exit 1
+fi
+
+# Step 4: Mount EROFS image using erofsfuse
+echo "Step 4: Mounting EROFS image with erofsfuse..."
+mkdir -p lowerdir
+bin/erofsfuse linux.erofs.img lowerdir
+
+# Step 5: Compare directories using diff
+echo "Step 5: Comparing source with EROFS mount..."
+if ! diff -r --no-dereference linux-source/ lowerdir/; then
+	echo "✗ ERROR: Content mismatch with --zfeature-bits=$ZFEATURE_BITS"
+	echo "Source and EROFS image differ - this indicates a bug in mkfs.erofs"
+	fusermount -u lowerdir 2>/dev/null || true
+	exit 1
+fi
+
+echo "✓ Content verification PASSED"
+
+# Step 6: Build Linux kernel using fuse-overlayfs
+echo "Step 6: Testing kernel build with fuse-overlayfs..."
+mkdir -p {upperdir,workdir,linux}
+fuse-overlayfs -o lowerdir=lowerdir,upperdir=upperdir,workdir=workdir linux
+
+cd linux
+echo "Making defconfig..."
+make defconfig
+echo "Building kernel (this may take a while)..."
+make -j$(nproc)
+echo "Cleaning kernel build..."
+make mrproper
+cd -
+
+echo "✓ Kernel build test PASSED"
+echo ""
+echo "=========================================="
+echo "✓ ALL TESTS PASSED for --zfeature-bits=$ZFEATURE_BITS"
+echo "=========================================="
+exit 0
