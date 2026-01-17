@@ -1,0 +1,43 @@
+name: freebsd
+
+on:
+  schedule:
+    # run at CST 1:00, 9:00, 17:00
+    - cron:  '0 1,9,17 * * *'
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build-erofs-utils:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        suffix: ["", "_mt"]
+    env:
+      EROFSUTILS_SOURCE_URL: ${{ vars.EROFSUTILS_SOURCE_URL }}
+    steps:
+    - uses: actions/checkout@v6
+    - name: Build erofs-utils in FreeBSD
+      id: test
+      uses: vmactions/freebsd-vm@v1
+      with:
+        envs: 'EROFSUTILS_SOURCE_URL'
+        usesh: true
+        run: |
+          pkg install -y git pkgconf automake autoconf libtool libuuid liblz4 zstd fusefs-libs
+          git clone $EROFSUTILS_SOURCE_URL -b experimental erofs-utils
+          cd erofs-utils
+          mkdir output
+          MT="dis";[ "x${{ matrix.suffix }}" = "x_mt" ] && MT="en"
+          ./autogen.sh && ./configure --enable-debug --enable-werror \
+              --with-uuid --enable-fuse \
+              --enable-lz4 --enable-lzma --with-libzstd \
+              --${MT}able-multithreading \
+              --prefix=$(pwd)/output && \
+              make && make install
+    - name: Upload erofs-utils
+      uses: actions/upload-artifact@v4
+      with:
+        name: erofs-utils${{ matrix.suffix }}
+        path: |
+          erofs-utils/output
