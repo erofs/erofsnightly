@@ -15,7 +15,7 @@ jobs:
         suffix: ["", "_mt"]
         arch: [x86_64, aarch64]
     env:
-      EROFSUTILS_SOURCE_URL: ${{ vars.EROFSUTILS_SOURCE_URL }}
+      EROFSUTILS_SOURCE_URL: ${{ vars.EROFSUTILS_SOURCE_URL || 'https://github.com/erofs/erofs-utils' }}
     steps:
     - uses: actions/checkout@v6
     - name: Build erofs-utils in FreeBSD

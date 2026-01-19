@@ -15,7 +15,7 @@ jobs:
       - name: Build erofs-utils
         run: |
           brew install autoconf automake git lz4 libtool
-          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
+          git clone ${{ vars.EROFSUTILS_SOURCE_URL || 'https://github.com/erofs/erofs-utils' }} -b experimental erofs-utils
           cd erofs-utils
           mkdir output
           ./autogen.sh && ./configure --enable-debug --enable-werror --prefix=$(pwd)/output \
