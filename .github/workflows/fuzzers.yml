@@ -22,7 +22,7 @@ jobs:
           sudo apt install -y libfuse-dev libselinux1-dev clang
           curl -L https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz | tar -zxv
           make BUILD_SHARED=no -C lz4-1.9.4 && lz4libdir=$(pwd)/lz4-1.9.4/lib
-          git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b experimental
+          git clone ${{ vars.EROFSUTILS_SOURCE_URL || 'https://github.com/erofs/erofs-utils' }} -b experimental erofs-utils
           cd erofs-utils
           mkdir output
           ./autogen.sh && CC=clang ./configure --enable-werror --enable-fuzzing \
